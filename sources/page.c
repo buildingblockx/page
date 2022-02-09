@@ -298,3 +298,4 @@ void free_pages(virt_addr_t vaddr, unsigned int order)
 		__free_pages(page, order);
 	}
 }
+
