@@ -111,9 +111,10 @@ static inline enum zone_type page_zonenum(struct page *page)
 
 /*
  * This function checks whether we can coalesce a page and its buddy.
- * (a) the buddy is in the buddy system.
- * (b) a page and its buddy have the same order.
- * (c) a page and its buddy are in the same zone.
+ * (a) the buddy pfn greater than the min_pfn
+ * (b) the buddy is in the buddy system.
+ * (c) a page and its buddy have the same order.
+ * (d) a page and its buddy are in the same zone.
  */
 static inline int page_is_buddy(struct page *page, struct page *buddy,
 						unsigned int order)
@@ -320,6 +321,7 @@ static unsigned long free_mem_core(phys_addr_t start, phys_addr_t end)
 }
 
 /**
+ * alloc struct page array and initialize, and then
  * release free pages to the page allocator,
  * and return the number of pages actually released.
  */
@@ -350,7 +352,8 @@ static inline enum migratetype gfpflags_to_migratetype(const gfp_t gfp_flags)
 }
 
 /**
- *
+ * According to the allocation flag @gfp_mask, allocate 2^@order pages,
+ * and then retuen start page frame corresponding struct page pointer
  */
 struct page *__alloc_pages(gfp_t gfp_mask, unsigned int order)
 {
@@ -361,7 +364,8 @@ struct page *__alloc_pages(gfp_t gfp_mask, unsigned int order)
 }
 
 /**
- *
+ * According to the allocation flag @gfp_mask, allocate 2^@order pages,
+ * and then retuen start page frame corresponding virtual address
  */
 virt_addr_t alloc_pages(gfp_t gfp_mask, unsigned int order)
 {
@@ -385,7 +389,8 @@ static inline enum migratetype get_page_migratetype(struct page *page)
 }
 
 /**
- *
+ * Start with @page corresponding page frame,
+ * free 2^@order pages
  */
 void __free_pages(struct page *page, unsigned int order)
 {
@@ -397,7 +402,8 @@ void __free_pages(struct page *page, unsigned int order)
 }
 
 /**
- *
+ * Start with virtual address @vaddr corresponding page frame,
+ * free 2^@order pages
  */
 void free_pages(virt_addr_t vaddr, unsigned int order)
 {
