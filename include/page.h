@@ -82,6 +82,9 @@ struct free_area {
 struct zone {
 	/* free areas of different sizes */
 	struct free_area	free_area[MAX_ORDER];
+
+	unsigned long		start_pfn;
+	unsigned long		pages;
 };
 
 typedef struct pglist_data {
@@ -95,6 +98,10 @@ extern pg_data_t pg_data;
 
 #define get_page_private(page)		((page)->private)
 #define set_page_private(page, v)	((page)->private = (v))
+
+#define for_each_migratetype_order(order, type) \
+	for (order = 0; order < MAX_ORDER; order++) \
+		for (type = 0; type < MIGRATE_TYPES; type++)
 
 /*
  * Convert a physical address to/from a Page Frame Number

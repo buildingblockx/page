@@ -118,6 +118,9 @@ static inline enum zone_type page_zonenum(struct page *page)
 static inline int page_is_buddy(struct page *page, struct page *buddy,
 						unsigned int order)
 {
+	if (page_to_pfn(buddy) < min_pfn)
+		return 0;
+
 	if (!page_buddy(buddy))
 		return 0;
 
@@ -171,6 +174,127 @@ static void free_page_core(struct page *page, unsigned long pfn,
 				migratetype);
 }
 
+static void alloc_struct_page(void)
+{
+	struct memblock_region *region;
+	struct page *page_array;
+	unsigned long pages = 0;
+	unsigned long i;
+
+	for_each_memblock_region(i, &memblock.memory, region)
+		pages += region->size / PAGE_SIZE;
+
+	page_array = memblock_alloc(pages * sizeof(struct page), PAGE_SIZE);
+
+	pg_data.mem_map = page_array;
+}
+
+static int zones_size_init(struct pglist_data *pgdat)
+{
+	unsigned long max_zone_pfn[MAX_NR_ZONES];
+	unsigned long start_pfn, end_pfn;
+	unsigned int i;
+
+	max_zone_pfn[ZONE_DMA]		= min(MAX_DMA_PFN, max_pfn);
+	max_zone_pfn[ZONE_NORMAL]	= max_pfn;
+
+	start_pfn = min_pfn;
+
+	for (i = 0; i < MAX_NR_ZONES; i++) {
+		phys_addr_t base, size;
+		int start_region, end_region;
+		struct zone *zone;
+		unsigned int ret;
+
+		end_pfn = max_zone_pfn[i];
+
+		if (end_pfn < start_pfn)
+			continue;
+
+		base = start_pfn << PAGE_SHIFT;
+		size = (end_pfn << PAGE_SHIFT) - base;
+
+		/*
+		 * This may appear here that the DMA region and the NORMAL region
+		 * is in the same regions, and calling memblock_isolate_range()
+		 * can isolate to two different regions, but
+		 * if you call memblock_add() later, it will cause the two
+		 * different regions to be rejoined into a large region again,
+		 * because them is close neighbor.
+		 */
+		ret = memblock_isolate_range(&memblock.memory, base, size,
+					&start_region, &end_region);
+		if (ret) {
+			pr_error("Can't isolate memblock range [0x%lx, 0x%lx)\n",
+				base, base + size);
+			return 0;
+		}
+
+		zone = pgdat->zones + i;
+		zone->start_pfn = start_pfn;
+		zone->pages = end_pfn - start_pfn;
+
+		start_pfn = end_pfn;
+	}
+}
+
+static void zone_init_free_lists(struct zone *zone)
+{
+	unsigned int order, type;
+
+	for_each_migratetype_order(order, type) {
+		INIT_LIST_HEAD(&zone->free_area[order].free_list[type]);
+		zone->free_area[order].nr_free = 0;
+	}
+}
+
+static inline void set_page_zone(struct page *page, enum zone_type zone)
+{
+	page->flags &= ~(ZONES_MASK << ZONES_PGOFF);
+	page->flags |= (zone & ZONES_MASK) << ZONES_PGOFF;
+}
+
+static inline void set_page_links(struct page *page, enum zone_type zone)
+{
+	set_page_zone(page, zone);
+}
+
+static void init_single_page(struct page *page, enum zone_type zone)
+{
+	set_page_links(page, zone);
+
+	INIT_LIST_HEAD(&page->list);
+}
+
+static void zone_init(unsigned long start_pfn, unsigned long size, enum zone_type zone)
+{
+	unsigned long pfn, end_pfn = start_pfn + size;
+	struct page *page;
+
+	for (pfn = start_pfn; pfn < end_pfn; pfn++) {
+		page = pfn_to_page(pfn);
+		init_single_page(page, zone);
+	}
+}
+
+static void zones_init(struct pglist_data *pgdat)
+{
+	struct zone *zone;
+	unsigned long zone_start_pfn, size;
+	enum zone_type i;
+
+	zones_size_init(pgdat);
+
+	for (i = 0; i < MAX_NR_ZONES; i++) {
+		zone = pgdat->zones + i;
+		zone_start_pfn = zone->start_pfn;
+		size = zone->pages;
+
+		zone_init_free_lists(zone);
+		zone_init(zone_start_pfn, size, i);
+	}
+}
+
 static unsigned long free_mem_core(phys_addr_t start, phys_addr_t end)
 {
 	unsigned long start_pfn = phys_to_pfn_up(start);
@@ -201,28 +325,14 @@ static unsigned long free_mem_core(phys_addr_t start, phys_addr_t end)
  */
 unsigned long page_allocator_init(void)
 {
-	struct memblock_region *region;
 	phys_addr_t start, end;
-	unsigned long pages = 0, zone_type;
+	unsigned long pages = 0;
 	u64 i;
 
-	for_each_memblock_region(i, &memblock.memory, region)
-		pages += region->size / PAGE_SIZE;
+	alloc_struct_page();
 
-	pg_data.mem_map = memblock_alloc(pages * sizeof(struct page),
-					PAGE_SIZE);
+	zones_init(&pg_data);
 
-	zone_type = ZONE_NORMAL;
-	for(i = 0; i < pages; i++) {
-		pg_data.mem_map[i].flags |= (zone_type << ZONES_PGOFF);
-	}
-
-	for(int __nr_zones = 0; __nr_zones < MAX_NR_ZONES; __nr_zones++)
-	for(int __nr_area = 0; __nr_area < MAX_ORDER; __nr_area++)
-	for(int __nr_migrate = 0; __nr_migrate < MIGRATE_TYPES; __nr_migrate++)
-	INIT_LIST_HEAD(((pg_data.zones + __nr_zones)->free_area + __nr_area)->free_list + __nr_migrate);
-
-	pages = 0;
 	for_each_free_memblock_region(i, &start, &end)
 		pages += free_mem_core(start, end);
 
