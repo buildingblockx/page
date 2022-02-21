@@ -4,6 +4,8 @@
 
 之前通过`memblock allocator`进行管理所有内存区域，有简单易用的优点，但是有不太灵活、效率低等因素，从而需要一个灵活并且高效率的新内存分配器。于是，以`page`为单位的`page allocator`就诞生了。
 
+这里是采用`buddy`算法的`page allocator`
+
 ## 原理
 
 ```

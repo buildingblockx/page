@@ -341,12 +341,12 @@ unsigned long page_allocator_init(void)
 	return pages;
 }
 
-static inline struct zone *gfpflags_to_zone(const gfp_t gfp_flags)
+static inline struct zone *gfp_to_zone(const gfp_t gfp_mask)
 {
 	return &pg_data.zones[ZONE_NORMAL];
 }
 
-static inline enum migratetype gfpflags_to_migratetype(const gfp_t gfp_flags)
+static inline enum migratetype gfp_to_migratetype(const gfp_t gfp_mask)
 {
 	return MIGRATE_UNMOVABLE;
 }
@@ -357,8 +357,8 @@ static inline enum migratetype gfpflags_to_migratetype(const gfp_t gfp_flags)
  */
 struct page *__alloc_pages(gfp_t gfp_mask, unsigned int order)
 {
-	struct zone *zone = gfpflags_to_zone(gfp_mask);
-	int migratetype = gfpflags_to_migratetype(gfp_mask);
+	struct zone *zone = gfp_to_zone(gfp_mask);
+	int migratetype = gfp_to_migratetype(gfp_mask);
 
 	return alloc_page_core(zone, order, migratetype);
 }
