@@ -12,6 +12,8 @@
 enum pageflags {
 	PAGE_locked,
 	PAGE_buddy,
+	PAGE_slab,
+	PAGE_compound,
 
 	MAX_NR_PAGEFLAGS
 };
@@ -58,14 +60,24 @@ enum zone_type {
 #define MIGRATETYPE_MASK	((1UL << MIGRATETYPE_SHIFT) - 1)
 
 #define PAGE_TYPE_OPS(name)					\
+/*								\
+ * If @page is in ##name allocator?				\
+ * Yes, return true; otherwise false;				\
+ */								\
 static inline int page_##name(struct page *page)		\
 {								\
 	return ((page->flags & PAGE_##name) == PAGE_##name);	\
 }								\
+/*								\
+ * Indicates that this page is in the ##name allocator		\
+ */								\
 static inline void set_page_##name(struct page *page)		\
 {								\
 	page->flags |= PAGE_##name;				\
 }								\
+/*								\
+ * Indicates that this page is not in the ##name allocator	\
+ */								\
 static inline void clear_page_##name(struct page *page)		\
 {								\
 	page->flags &= ~PAGE_##name;				\
@@ -73,6 +85,8 @@ static inline void clear_page_##name(struct page *page)		\
 
 PAGE_TYPE_OPS(locked)
 PAGE_TYPE_OPS(buddy)
+PAGE_TYPE_OPS(slab)
+PAGE_TYPE_OPS(compound)
 
 struct free_area {
 	struct list_head	free_list[MIGRATE_TYPES];
@@ -102,6 +116,38 @@ extern pg_data_t pg_data;
 #define for_each_migratetype_order(order, type) \
 	for (order = 0; order < MAX_ORDER; order++) \
 		for (type = 0; type < MIGRATE_TYPES; type++)
+
+static inline struct page *get_compound_page_head(struct page *page)
+{
+	unsigned long head = page->head;
+
+	if(head & 1)
+		return (struct page *) (head - 1);
+
+	return page;
+}
+
+static inline void set_compound_page_head(struct page *page, struct page *head_page,
+				unsigned int order)
+{
+	unsigned long head;
+
+	head = head_page ? ((unsigned long)head_page | 0x1) : 0;
+
+	for (int i = 0; i < (1 << order); i++) {
+		(page + i)->head = head;
+	}
+}
+
+static inline unsigned int get_compound_page_order(struct page *page)
+{
+	return page->order;
+}
+
+static inline void set_compound_page_order(struct page *page, unsigned int order)
+{
+	page->order = order;
+}
 
 /*
  * Convert a physical address to/from a Page Frame Number
@@ -163,6 +209,13 @@ static inline struct page *virt_to_page(virt_addr_t vaddr)
 	phys_addr_t paddr = virt_to_phys(vaddr);
 
 	return phys_to_page(paddr);
+}
+
+static inline struct page *virt_to_head_page(virt_addr_t vaddr)
+{
+	struct page *page = virt_to_page(vaddr);
+
+	return get_compound_page_head(page);
 }
 
 static inline virt_addr_t page_to_virt(struct page *page)

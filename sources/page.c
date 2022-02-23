@@ -14,9 +14,11 @@ static inline struct page *get_page_from_free_area(struct free_area *area,
 static inline void del_page_from_free_area(struct page *page,
 					struct free_area *area)
 {
+	unsigned int order = 0;
+
 	list_del(&page->list);
 	clear_page_buddy(page);
-	set_page_private(page, 0UL);
+	set_page_private(page, order);
 	area->nr_free--;
 }
 
@@ -96,14 +98,6 @@ static inline unsigned long find_buddy_pfn(unsigned long page_pfn,
 	return page_pfn ^ (1 << order);
 }
 
-/*
- * This function returns the order of a free page in the buddy system.
- */
-static inline unsigned int page_order(struct page *page)
-{
-	return get_page_private(page);
-}
-
 static inline enum zone_type page_zonenum(struct page *page)
 {
 	return (page->flags >> ZONES_PGOFF) & ZONES_MASK;
@@ -125,7 +119,7 @@ static inline int page_is_buddy(struct page *page, struct page *buddy,
 	if (!page_buddy(buddy))
 		return 0;
 
-	if (page_order(buddy) != order)
+	if (get_page_private(buddy) != order)
 		return 0;
 
 	if (page_zonenum(page) != page_zonenum(buddy))
