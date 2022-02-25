@@ -1,6 +1,10 @@
-#include <page.h>
+#include <memory/allocator/memblock.h>
 #include <memblock.h>
+#include <memory/page_flags.h>
+#include <page.h>
 #include <list.h>
+#include <clamp.h>
+#include <print.h>
 
 pg_data_t pg_data;
 
@@ -169,6 +173,80 @@ static void free_page_core(struct page *page, unsigned long pfn,
 				migratetype);
 }
 
+static inline struct zone *gfp_to_zone(const gfp_t gfp_mask)
+{
+	return &pg_data.zones[ZONE_NORMAL];
+}
+
+static inline enum migratetype gfp_to_migratetype(const gfp_t gfp_mask)
+{
+	return MIGRATE_UNMOVABLE;
+}
+
+/**
+ * According to the allocation flag @gfp_mask, allocate 2^@order pages,
+ * and then retuen start page frame corresponding struct page pointer
+ */
+struct page *__alloc_pages(gfp_t gfp_mask, unsigned int order)
+{
+	struct zone *zone = gfp_to_zone(gfp_mask);
+	int migratetype = gfp_to_migratetype(gfp_mask);
+
+	return alloc_page_core(zone, order, migratetype);
+}
+
+/**
+ * According to the allocation flag @gfp_mask, allocate 2^@order pages,
+ * and then retuen start page frame corresponding virtual address
+ */
+void *alloc_pages(gfp_t gfp_mask, unsigned int order)
+{
+	struct page *page;
+
+	page = __alloc_pages(gfp_mask, order);
+	if (!page)
+		return 0;
+
+	return page_address(page);
+}
+
+static inline struct zone *page_zone(struct page *page)
+{
+	return &pg_data.zones[page_zonenum(page)];
+}
+
+static inline enum migratetype get_page_migratetype(struct page *page)
+{
+	return MIGRATE_UNMOVABLE;
+}
+
+/**
+ * Start with @page corresponding page frame,
+ * free 2^@order pages
+ */
+void __free_pages(struct page *page, unsigned int order)
+{
+	unsigned long pfn = page_to_pfn(page);
+	struct zone *zone = page_zone(page);
+	int migratetype = get_page_migratetype(page);
+
+	free_page_core(page, pfn, zone, order, migratetype);
+}
+
+/**
+ * Start with virtual address @vaddr corresponding page frame,
+ * free 2^@order pages
+ */
+void free_pages(void *vaddr, unsigned int order)
+{
+	struct page *page;
+
+	if (vaddr != 0) {
+		 page = virt_to_page(vaddr);
+		__free_pages(page, order);
+	}
+}
+
 static void alloc_struct_page(void)
 {
 	struct memblock_region *region;
@@ -295,7 +373,7 @@ static unsigned long free_mem_core(phys_addr_t start, phys_addr_t end)
 	unsigned long start_pfn = phys_to_pfn_up(start);
 	unsigned long end_pfn = phys_to_pfn_down(end);
 	unsigned long pages = 0;
-	int order;
+	unsigned int order;
 
 	if (start_pfn >= end_pfn)
 		return 0;
@@ -323,7 +401,7 @@ unsigned long page_allocator_init(void)
 {
 	phys_addr_t start, end;
 	unsigned long pages = 0;
-	u64 i;
+	uint64_t i;
 
 	alloc_struct_page();
 
@@ -334,78 +412,3 @@ unsigned long page_allocator_init(void)
 
 	return pages;
 }
-
-static inline struct zone *gfp_to_zone(const gfp_t gfp_mask)
-{
-	return &pg_data.zones[ZONE_NORMAL];
-}
-
-static inline enum migratetype gfp_to_migratetype(const gfp_t gfp_mask)
-{
-	return MIGRATE_UNMOVABLE;
-}
-
-/**
- * According to the allocation flag @gfp_mask, allocate 2^@order pages,
- * and then retuen start page frame corresponding struct page pointer
- */
-struct page *__alloc_pages(gfp_t gfp_mask, unsigned int order)
-{
-	struct zone *zone = gfp_to_zone(gfp_mask);
-	int migratetype = gfp_to_migratetype(gfp_mask);
-
-	return alloc_page_core(zone, order, migratetype);
-}
-
-/**
- * According to the allocation flag @gfp_mask, allocate 2^@order pages,
- * and then retuen start page frame corresponding virtual address
- */
-virt_addr_t alloc_pages(gfp_t gfp_mask, unsigned int order)
-{
-	struct page *page;
-
-	page = __alloc_pages(gfp_mask, order);
-	if (!page)
-		return 0;
-
-	return page_address(page);
-}
-
-static inline struct zone *page_zone(struct page *page)
-{
-	return &pg_data.zones[page_zonenum(page)];
-}
-
-static inline enum migratetype get_page_migratetype(struct page *page)
-{
-	return MIGRATE_UNMOVABLE;
-}
-
-/**
- * Start with @page corresponding page frame,
- * free 2^@order pages
- */
-void __free_pages(struct page *page, unsigned int order)
-{
-	unsigned long pfn = page_to_pfn(page);
-	struct zone *zone = page_zone(page);
-	int migratetype = get_page_migratetype(page);
-
-	free_page_core(page, pfn, zone, order, migratetype);
-}
-
-/**
- * Start with virtual address @vaddr corresponding page frame,
- * free 2^@order pages
- */
-void free_pages(virt_addr_t vaddr, unsigned int order)
-{
-	struct page *page;
-
-	if (vaddr != 0) {
-		 page = virt_to_page(vaddr);
-		__free_pages(page, order);
-	}
-}
-
